@@ -1,5 +1,6 @@
 package com.example.lab_week_09
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +35,9 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,19 +69,20 @@ fun App(navController: NavHostController) {
         startDestination = "home"
     ) {
         composable("home") {
-            Home { navController.navigate(
-                "resultContent/?listData=$it")
+            Home { json ->
+                val encodedJson = Uri.encode(json)
+                navController.navigate("resultContent/$encodedJson")
             }
         }
         composable(
-            "resultContent/?listData={listData}",
+            "resultContent/{listData}",
             arguments = listOf(navArgument("listData") {
-                type = NavType.StringType }
-            )
-        ) {
-            ResultContent(
-                it.arguments?.getString("listData").orEmpty()
-            )
+                type = NavType.StringType
+            })
+        ) { backStackEntry ->
+            val encodedJson = backStackEntry.arguments?.getString("listData").orEmpty()
+            val json = Uri.decode(encodedJson)
+            ResultContent(json)
         }
     }
 }
@@ -89,22 +94,28 @@ fun Home(navigateFromHomeToResult: (String) -> Unit) {
         Student("Tina"),
         Student("Tono")
     )}
-    val inputField = remember { mutableStateOf(Student("")) }  // Ubah ke val, karena kita akses .value
+    val inputField = remember { mutableStateOf(Student("")) }
 
     HomeContent(
         listData = listData,
-        inputField = inputField.value,  // Pass value-nya (Student)
+        inputField = inputField.value,
         onInputValueChange = { input ->
-            inputField.value = inputField.value.copy(input)  // Copy di value, positional karena name adalah param pertama
+            inputField.value = inputField.value.copy(input)
         },
         onButtonClick = {
-            if (inputField.value.name.isNotBlank()) {  // Cek kosong seperti di modul
+            if (inputField.value.name.isNotBlank()) {
                 listData.add(inputField.value)
                 inputField.value = Student("")
             }
         },
         navigateFromHomeToResult = {
-            navigateFromHomeToResult(listData.toList().toString())
+            val moshi = Moshi.Builder()
+                .add(KotlinJsonAdapterFactory())
+                .build()
+            val type = Types.newParameterizedType(List::class.java, Student::class.java)
+            val adapter = moshi.adapter<List<Student>>(type)
+            val json = adapter.toJson(listData)
+            navigateFromHomeToResult(json)
         }
     )
 }
@@ -165,19 +176,23 @@ fun HomeContent(
 }
 
 @Composable
-fun ResultContent(listData: String) {
-    Column(
-        modifier = Modifier
-            .padding(vertical = 4.dp)
-            .fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        OnBackgroundItemText(text = listData)
+fun ResultContent(json: String) {
+    val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+    val type = Types.newParameterizedType(List::class.java, Student::class.java)
+    val adapter = moshi.adapter<List<Student>>(type)
+    val listDataParsed: List<Student> = adapter.fromJson(json) ?: emptyList()
+
+    LazyColumn {
+        items(listDataParsed) { student ->
+            OnBackgroundItemText(text = student.name)
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
 fun PreviewHome() {
-    Home { /* Lambda dummy untuk preview, abaikan navigasi */ }
+    Home { }
 }
